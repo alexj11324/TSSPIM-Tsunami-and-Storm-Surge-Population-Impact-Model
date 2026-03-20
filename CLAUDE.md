@@ -8,12 +8,16 @@ CMU Heinz MSPPM 2026 Capstone for American Red Cross. Property-level storm surge
 
 ## Architecture
 
+There are two major pipelines:
+
+### Pipeline 1: FAST Damage Engine (Building-Level)
+
 ```
-NSI Parquet (local)   → DuckDB: clean/filter/dedup/map → FAST CSV
-                                                              ↓
-NHC P-Surge GeoTIFF (FAST-main/rasters/) ──────────────→ FAST engine → damage predictions
-                                                              ↓
-                                              population impact → high-need → service demand
+NSI API / Parquet  → DuckDB: clean/filter/dedup/map → FAST CSV
+                                                          ↓
+NHC P-Surge GeoTIFF (FAST-main/rasters/) ────────→ FAST engine → damage predictions
+                                                          ↓
+                                            BldgDmgPct, Depth_Grid, BldgLossUSD per building
 ```
 
 **Primary pipeline**: `scripts/duckdb_fast_pipeline.py` — single SQL pass handles spatial filtering (bbox), deduplication (`ROW_NUMBER() OVER (PARTITION BY bid)`), and column mapping. Preferred for performance.
@@ -22,14 +26,35 @@ NHC P-Surge GeoTIFF (FAST-main/rasters/) ─────────────
 
 Both produce identical FAST CSV format and invoke the same FAST engine.
 
+### Pipeline 2: L/M/H Population Impact (County-Level)
+
+```
+FAST predictions (Athena)
+    → Dedup across advisories (MAX damage per building)
+    → Classify intensity zone: HIGH/MEDIUM/LOW by surge depth + damage % fallback
+    → Spatial join to county (ST_CONTAINS)
+    → County aggregation (GROUP BY event, county, zone)
+    → Census population join + ARC conversion rates
+    → Planning Assumptions Spreadsheet (columns J-R)
+```
+
+Scripts live in `research/population_impact/scripts/` (01–06, executed sequentially). Full flowchart: `docs/pipeline_flowchart.md`. Implementation plan: `research/population_impact/IMPLEMENTATION_PLAN.md`.
+
+**Intensity zone classification logic** (surge-primary, damage-fallback):
+- `depth_grid > 12ft` → HIGH | `>= 9ft` → MEDIUM | `>= 4ft` → LOW
+- Fallback: `bldgdmgpct > 35%` → HIGH | `> 15%` → MEDIUM | `> 0%` → LOW
+
+**ARC conversion rates** (shelter: H=5%, M=3%, L=1% | feeding: H=12%, M=7%, L=3%).
+
 ### Data Sources
 
 | Dataset | Format | Location |
 |---------|--------|----------|
-| **NSI** (National Structure Inventory) | Parquet, partitioned by state | Local filesystem |
+| **NSI** (National Structure Inventory) | Parquet, partitioned by state | Local filesystem or via `download_nsi_by_state.py` |
 | **NHC P-Surge rasters** | GeoTIFF (.tif), flood depth in feet | `FAST-main/rasters/` — 27 rasters (9 events x 3 advisories) |
 | **Ground Truth** | Excel | `Ground Truth Data.xlsx` — 9 hurricanes 2018-2024 |
 | **FAST Depth-Damage Functions** | CSV/Excel lookup tables | `FAST-main/Lookuptables/` |
+| **Census ACS 5-year** | API | County population for L/M/H pipeline |
 
 ### FAST Engine Internals
 
@@ -45,12 +70,21 @@ Both produce identical FAST CSV format and invoke the same FAST engine.
 |--------|---------|
 | `scripts/duckdb_fast_pipeline.py` | **Primary pipeline**: NSI Parquet → FAST CSV via DuckDB SQL |
 | `scripts/fast_e2e_from_oracle.py` | Legacy E2E pipeline (row-by-row Python) |
+| `research/population_impact/scripts/01_county_damage_agg.py` | Event-level county aggregation of FAST predictions (pre-L/M/H) |
+| `research/population_impact/scripts/02_fetch_census_svi.py` | Pull county ACS + SVI metrics for population impact pipeline |
+| `research/population_impact/scripts/03_build_and_train.py` | Train ML damage model variant on FAST output |
+| `scripts/download_nsi_by_state.py` | Download NSI from USACE API → GeoJSON → Parquet (state-by-state) |
+| `scripts/nsi_raw_to_parquet.py` | Raw NSI GPKG/GeoJSON → Parquet conversion (DuckDB or geopandas engine) |
 | `scripts/slosh_to_raster.py` | SLOSH Parquet → GeoTIFF (inundation = surge - topography) |
 | `scripts/h3_spatial_index.py` | H3 hex pre-filtering: raster valid pixels → H3 cells → filter NSI buildings |
 | `scripts/ml_damage_model.py` | ML alternative to FAST DDFs (LightGBM/XGBoost on FAST output) |
 | `scripts/validate_pipeline.py` | Post-run validation: schema checks + aggregate stats on predictions CSV |
-| `scripts/nsi_raw_to_parquet.py` | Raw NSI GPKG/GeoJSON → Parquet conversion via DuckDB spatial |
 | `scripts/match_county_coverage_cloud.py` | County-level coverage analysis against ground truth |
+| `scripts/deploy_to_instances.py` | Remote AWS node bootstrapping |
+| `scripts/gen_cloudinit.py` | Generate cloud-init config for EC2 instances |
+| `research/population_impact/scripts/04_classify_lmh.py` | Athena query: dedup + L/M/H zone classification + county agg |
+| `research/population_impact/scripts/05_format_for_spreadsheet.py` | Census join + ARC conversion rates → planning output CSV/XLSX |
+| `research/population_impact/scripts/06_validate_lmh.py` | Validation against ground truth (RMSE, MAE, R²) |
 
 ## Environment Setup
 
@@ -66,6 +100,12 @@ Geospatial deps (rasterio/GDAL): always use `conda install conda-forge::rasterio
 ## Common Commands
 
 ```bash
+# Download NSI data by state (API → GeoJSON → Parquet)
+python scripts/download_nsi_by_state.py --state Florida --state Texas --engine duckdb --output-dir data
+
+# Convert raw NSI file to processed parquet
+python scripts/nsi_raw_to_parquet.py --input path/to/nsi.geojson --output path/to/out.parquet
+
 # DuckDB pipeline (preferred)
 python scripts/duckdb_fast_pipeline.py --state Florida
 
@@ -86,11 +126,24 @@ python scripts/validate_pipeline.py --predictions path/to/output.csv
 ### Testing
 
 ```bash
+# Run all tests
+python -m pytest tests/ -v
+
+# Run a single test file
+python -m pytest tests/test_download_nsi_by_state.py -v
+
+# Run a single test function
+python -m pytest tests/test_download_nsi_by_state.py::test_normalize_state_identifier_variants -v
+
 # FAST CSV/Parquet parity test (requires GDAL + sample data in FAST-main/UDF/)
 python -m pytest FAST-main/tests/test_csv_parquet_parity.py -v
 ```
 
-The parity test verifies that CSV and Parquet input paths produce byte-identical FAST output.
+Tests must be run from project root (`python -m pytest`) because `scripts/` has no `__init__.py` — the test files use `from scripts import ...` which relies on the project root being in `sys.path`.
+
+### CI/CD
+
+- **GitHub Actions**: `.github/workflows/download-nsi.yml` — manual dispatch workflow to download NSI by state, converts to parquet, uploads as artifact (90-day retention). Trigger via GitHub UI with comma-separated state list.
 
 ## Data Contracts
 
@@ -109,6 +162,10 @@ The parity test verifies that CSV and Parquet input paths produce byte-identical
 | `val_cont` | `ContentCost` | Optional |
 
 Full mapping also defined in AGENTS.md §3-4.
+
+### NSI Parquet Target Schema
+
+Defined in `scripts/nsi_raw_to_parquet.py:TARGET_SCHEMA` — 31 columns including population fields (`pop2pmu65`, `pop2pmo65`), census block FIPS (`cbfips`), and geometry (`x`, `y`, `longitude`, `latitude`). The `download_nsi_by_state.py` pipeline produces parquet partitioned as `processed/nsi/state={State_Name}/part-00000.snappy.parquet`.
 
 ### P-Surge Rasters
 
@@ -155,28 +212,33 @@ No dedup on `bid` across parquet files — duplicate FltyIds inflate damage tota
 ## Conventions
 
 - **Commit messages**: Conventional Commits — `feat:`, `fix:`, `docs:`, `chore:` etc.
-- **Code style**: Python 3.10+, strict type hints, `black`/`ruff` formatting (line limit 120), `isort` for imports. Details in `conductor/code_styleguides/python_data.md`.
+- **Code style**: Python 3.10+, strict type hints, `black`/`ruff` formatting (line limit 120), `isort` for imports. Details in `conductor/code_styleguides/python_data.md` (mirrored at `docs/governance/code_styleguides/python_data.md`).
 - **TDD**: Required for data transformation functions. Mock parquet payloads locally.
 - **Execution contract**: AGENTS.md defines hard rules for agent behavior — follow it by default.
-- **Conductor system**: `conductor/` tracks project governance (workflow, tech stack, product definition).
+- **Governance docs**: `docs/governance/` tracks workflow, tech stack, product definition.
+
+## Key Documentation
+
+| Document | Path |
+|----------|------|
+| Agent execution contract | `AGENTS.md` |
+| Pipeline flowchart (end-to-end) | `docs/pipeline_flowchart.md` |
+| C4 architecture diagrams | `C4-Documentation/c4-*.md` |
+| L/M/H implementation plan | `research/population_impact/IMPLEMENTATION_PLAN.md` |
+| System manual | `docs/manual/system_manual.md` |
+| Onboarding guide | `docs/wiki/zero_to_hero.md` |
+| NSI data dictionary | `docs/data_dictionary/NSI_DATA_DICTIONARY_EN.md` |
 
 ## Next Steps (Active Roadmap)
 
-### 1. Automated Data Download Script
-
-Write a new script that uses the **NSI API** and **NHC P-Surge API** to automatically download data, replacing the current manual local-file workflow. Requirements:
-- Support `--state` flag to download only specified states (not the entire national dataset)
-- NSI: download building inventory for target states → save as Parquet
-- P-Surge rasters: download GeoTIFF for a given storm event and advisory
-
-### 2. Latest-Advisory Raster Selection (Timeliness over Maximum)
+### 1. Latest-Advisory Raster Selection (Timeliness over Maximum)
 
 Current approach uses all 3 advisories per event. **New policy**: use only the **most recent (latest) advisory raster** for predictions, not the maximum or all advisories. Rationale:
 - Latest advisory reflects the most up-to-date NHC forecast track and intensity
 - Older advisories may predict surge in areas the storm no longer threatens
 - Improves both timeliness and spatial accuracy of damage estimates
 
-### 3. Census Tract Severity Classification via Building Damage
+### 2. Census Tract Severity Classification via Building Damage
 
 Replace the current storm-surge-depth-based intensity metric with a **building-damage-based severity classification** at the census tract level. Approach:
 - Aggregate FAST `BldgDmgPct` per census tract (using NSI `cbfips` → tract FIPS)
