@@ -26,7 +26,7 @@ import pandas as pd
 
 # ---------------------------------------------------------------------------
 # Event name mapping (Ground Truth uses short names, our pipeline uses EVENT_YEAR)
-# Copied from 03_build_and_train.py
+# GT uses short event names; our pipeline uses EVENT_YEAR format
 # ---------------------------------------------------------------------------
 GT_EVENT_MAP = {
     "Beryl": "BERYL_2024",
@@ -64,8 +64,7 @@ def log(msg: str) -> None:
 def load_ground_truth(path: Path) -> pd.DataFrame:
     """Load and normalize Ground Truth Excel.
 
-    Copied from 03_build_and_train.py:75-92 with the same FIPS normalization
-    pattern.
+    Normalizes event names via GT_EVENT_MAP and zero-pads county FIPS to 5 digits.
     """
     raw = pd.read_excel(path, engine="openpyxl")
     df = pd.DataFrame()

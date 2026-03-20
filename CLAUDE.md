@@ -38,7 +38,7 @@ FAST predictions (Athena)
     → Planning Assumptions Spreadsheet (columns J-R)
 ```
 
-Scripts live in `research/population_impact/scripts/` (01–06, executed sequentially). Full flowchart: `docs/pipeline_flowchart.md`. Implementation plan: `research/population_impact/IMPLEMENTATION_PLAN.md`.
+Scripts live in `research/population_impact/scripts/` (04–06, executed sequentially). Full flowchart: `docs/pipeline_flowchart.md`.
 
 **Intensity zone classification logic** (surge-primary, damage-fallback):
 - `depth_grid > 12ft` → HIGH | `>= 9ft` → MEDIUM | `>= 4ft` → LOW
@@ -70,9 +70,6 @@ Scripts live in `research/population_impact/scripts/` (01–06, executed sequent
 |--------|---------|
 | `scripts/duckdb_fast_pipeline.py` | **Primary pipeline**: NSI Parquet → FAST CSV via DuckDB SQL |
 | `scripts/fast_e2e_from_oracle.py` | Legacy E2E pipeline (row-by-row Python) |
-| `research/population_impact/scripts/01_county_damage_agg.py` | Event-level county aggregation of FAST predictions (pre-L/M/H) |
-| `research/population_impact/scripts/02_fetch_census_svi.py` | Pull county ACS + SVI metrics for population impact pipeline |
-| `research/population_impact/scripts/03_build_and_train.py` | Train ML damage model variant on FAST output |
 | `scripts/download_nsi_by_state.py` | Download NSI from USACE API → GeoJSON → Parquet (state-by-state) |
 | `scripts/nsi_raw_to_parquet.py` | Raw NSI GPKG/GeoJSON → Parquet conversion (DuckDB or geopandas engine) |
 | `scripts/slosh_to_raster.py` | SLOSH Parquet → GeoTIFF (inundation = surge - topography) |
@@ -224,7 +221,6 @@ No dedup on `bid` across parquet files — duplicate FltyIds inflate damage tota
 | Agent execution contract | `AGENTS.md` |
 | Pipeline flowchart (end-to-end) | `docs/pipeline_flowchart.md` |
 | C4 architecture diagrams | `C4-Documentation/c4-*.md` |
-| L/M/H implementation plan | `research/population_impact/IMPLEMENTATION_PLAN.md` |
 | System manual | `docs/manual/system_manual.md` |
 | Onboarding guide | `docs/wiki/zero_to_hero.md` |
 | NSI data dictionary | `docs/data_dictionary/NSI_DATA_DICTIONARY_EN.md` |

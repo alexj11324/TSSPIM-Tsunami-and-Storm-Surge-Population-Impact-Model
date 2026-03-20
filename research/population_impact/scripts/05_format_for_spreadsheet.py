@@ -59,7 +59,7 @@ OUTPUT_COLUMNS = [
     "hh_feeding_high",
 ]
 
-# Census API (ACS 5-year, 2022) — same source as 02_fetch_census_svi.py
+# Census API (ACS 5-year, 2022)
 CENSUS_API_BASE = "https://api.census.gov/data/2022/acs/acs5"
 
 
@@ -73,7 +73,7 @@ def log(msg: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Census data helpers (pattern copied from 02_fetch_census_svi.py:47-98)
+# Census data helpers
 # ---------------------------------------------------------------------------
 
 def _safe_int(val) -> int:
@@ -140,7 +140,7 @@ def load_census(census_path: Path) -> pd.DataFrame:
         # Ensure fips is zero-padded to 5 digits
         df["county_fips5"] = df["county_fips5"].str.zfill(5)
 
-        # Normalise column names from 02_fetch_census_svi.py output
+        # Normalise column names from Census CSV output
         rename_map = {}
         if "county_name_census" in df.columns and "county_name" not in df.columns:
             rename_map["county_name_census"] = "county_name"
