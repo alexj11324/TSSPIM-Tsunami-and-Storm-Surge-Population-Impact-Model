@@ -51,7 +51,7 @@ Scripts live in `research/population_impact/scripts/` (04–06, executed sequent
 | Dataset | Format | Location |
 |---------|--------|----------|
 | **NSI** (National Structure Inventory) | Parquet, partitioned by state | Local filesystem or via `download_nsi_by_state.py` |
-| **NHC P-Surge rasters** | GeoTIFF (.tif), flood depth in feet | `FAST-main/rasters/` — 27 rasters (9 events x 3 advisories) |
+| **NHC P-Surge rasters** | GeoTIFF (.tif), flood depth in feet, downloaded directly from NHC | `FAST-main/rasters/` — 27 rasters (9 events x 3 advisories) |
 | **Ground Truth** | Excel | `Ground Truth Data.xlsx` — 9 hurricanes 2018-2024 |
 | **FAST Depth-Damage Functions** | CSV/Excel lookup tables | `FAST-main/Lookuptables/` |
 | **Census ACS 5-year** | API | County population for L/M/H pipeline |
@@ -72,7 +72,7 @@ Scripts live in `research/population_impact/scripts/` (04–06, executed sequent
 | `scripts/fast_e2e_from_oracle.py` | Legacy E2E pipeline (row-by-row Python) |
 | `scripts/download_nsi_by_state.py` | Download NSI from USACE API → GeoJSON → Parquet (state-by-state) |
 | `scripts/nsi_raw_to_parquet.py` | Raw NSI GPKG/GeoJSON → Parquet conversion (DuckDB or geopandas engine) |
-| `scripts/slosh_to_raster.py` | SLOSH Parquet → GeoTIFF (inundation = surge - topography) |
+| `scripts/slosh_to_raster.py` | (Legacy) SLOSH Parquet → GeoTIFF; not used in active pipeline — rasters downloaded directly from NHC |
 | `scripts/h3_spatial_index.py` | H3 hex pre-filtering: raster valid pixels → H3 cells → filter NSI buildings |
 | `scripts/ml_damage_model.py` | ML alternative to FAST DDFs (LightGBM/XGBoost on FAST output) |
 | `scripts/validate_pipeline.py` | Post-run validation: schema checks + aggregate stats on predictions CSV |
@@ -109,9 +109,6 @@ python scripts/duckdb_fast_pipeline.py --state Florida
 # Legacy E2E pipeline
 python scripts/fast_e2e_from_oracle.py \
   --state-scope Florida --raster-name auto --config configs/fast_e2e.yaml
-
-# SLOSH Parquet → GeoTIFF raster
-python scripts/slosh_to_raster.py --basin ny3mom --category 3 --tide high
 
 # H3 spatial pre-indexing
 python scripts/h3_spatial_index.py --raster path/to/raster.tif --resolution 7
@@ -170,11 +167,6 @@ Defined in `scripts/nsi_raw_to_parquet.py:TARGET_SCHEMA` — 31 columns includin
 - `e10` = 10% exceedance probability (upper-end planning level)
 - 9 events: BERYL, DEBBY, FLORENCE, HELENE, IAN, IDALIA, IDA, MICHAEL, MILTON
 - 3 advisories each, 27 rasters total, ~3.9M building-level predictions
-
-### SLOSH → Raster (when rasterizing from source)
-
-- Geometry: `geometry_wkt` | Surge: `cN_mean`/`cN_high` (N=0..5) | Terrain: `topography`
-- Inundation depth = surge elevation - topography; output GeoTIFF in feet, NODATA=-9999
 
 ### FAST Runtime Parameters
 

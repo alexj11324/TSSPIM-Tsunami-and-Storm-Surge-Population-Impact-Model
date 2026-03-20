@@ -4,7 +4,7 @@
 graph TD
     subgraph Data Sources
         NSI_API["USACE NSI API<br/>(30M+ buildings)"]
-        NHC["NHC P-Surge<br/>GeoTIFF rasters"]
+        NHC["NHC P-Surge GeoTIFF<br/>(downloaded from NHC)"]
         NSI_PARQUET["NSI Parquet<br/>(partitioned by state)"]
         CENSUS["Census ACS 5-year API<br/>(county population)"]
         GT["Ground Truth Data.xlsx<br/>(9 hurricanes 2018-2024)"]
@@ -13,7 +13,6 @@ graph TD
     subgraph "Data Ingestion (local)"
         DL["download_nsi_by_state.py<br/>API → GeoJSON"]
         CONVERT["nsi_raw_to_parquet.py<br/>GeoJSON → Parquet"]
-        SLOSH["slosh_to_raster.py<br/>SLOSH points → GeoTIFF"]
     end
 
     subgraph "Pipeline 1: FAST Damage Engine (local, no AWS)"
@@ -54,7 +53,6 @@ graph TD
     NSI_PARQUET --> LEGACY
     NHC --> DUCKDB
     NHC --> LEGACY
-    SLOSH --> NHC
     DUCKDB --> FAST_CSV
     LEGACY --> FAST_CSV
     FAST_CSV --> FAST

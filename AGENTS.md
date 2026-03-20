@@ -8,7 +8,7 @@ Follow these rules by default unless the user explicitly overrides them.
 Primary production path:
 
 1. Use NSI processed data to build FAST-ready building inventory CSV.
-2. Use SLOSH processed data to produce flood depth raster (`.tif`).
+2. Use NHC P-Surge GeoTIFF rasters (downloaded directly from NHC) as flood depth input.
 3. Run FAST headless (no GUI) and generate FAST output CSV artifacts.
 
 Do not introduce unrelated architecture changes unless requested.
@@ -66,15 +66,9 @@ Keep and populate these columns:
 9. `longitude` -> `Longitude`
 10. `val_cont` -> `ContentCost` (optional)
 
-### 4.2 SLOSH -> Raster
+### 4.2 P-Surge Rasters
 
-Use SLOSH fields to build raster; FAST does not consume SLOSH parquet directly:
-
-1. Geometry: `geometry_wkt`
-2. Surge scenario value: one of `cN_mean` / `cN_high` (N=0..5)
-3. Terrain adjustment as needed: `topography`
-
-Output must be GeoTIFF (`.tif`) in feet.
+Rasters are downloaded directly from NHC as GeoTIFF (`.tif`) in feet. No SLOSH-to-raster conversion needed.
 
 ## 5. Default Hazard Choice Policy
 
@@ -125,7 +119,7 @@ Do not ask for information that is discoverable from tools, the CLI, or the file
 1. Do not silently alter business assumptions.
 2. Do not switch data model without explicit request.
 3. Do not expand scope to OCI/DB refactors unless user asks.
-4. Keep changes focused on NSI -> FAST CSV, SLOSH -> raster, and FAST execution.
+4. Keep changes focused on NSI -> FAST CSV, P-Surge rasters, and FAST execution.
 
 ## 9. Skill Routing for Repository Organization
 
