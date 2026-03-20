@@ -25,8 +25,7 @@ import numpy as np
 import pandas as pd
 
 # ---------------------------------------------------------------------------
-# Event name mapping (Ground Truth uses short names, our pipeline uses EVENT_YEAR)
-# GT uses short event names; our pipeline uses EVENT_YEAR format
+# Event name mapping: Ground Truth uses short names; pipeline uses EVENT_YEAR format
 # ---------------------------------------------------------------------------
 GT_EVENT_MAP = {
     "Beryl": "BERYL_2024",
