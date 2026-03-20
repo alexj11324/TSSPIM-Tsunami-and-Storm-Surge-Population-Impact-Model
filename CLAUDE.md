@@ -201,7 +201,7 @@ No dedup on `bid` across parquet files — duplicate FltyIds inflate damage tota
 ## Conventions
 
 - **Commit messages**: Conventional Commits — `feat:`, `fix:`, `docs:`, `chore:` etc.
-- **Code style**: Python 3.10+, strict type hints, `black`/`ruff` formatting (line limit 120), `isort` for imports. Details in `conductor/code_styleguides/python_data.md` (mirrored at `docs/governance/code_styleguides/python_data.md`).
+- **Code style**: Python 3.10+, strict type hints, `black`/`ruff` formatting (line limit 120), `isort` for imports. Details in `docs/governance/code_styleguides/python_data.md`.
 - **TDD**: Required for data transformation functions. Mock parquet payloads locally.
 - **Execution contract**: AGENTS.md defines hard rules for agent behavior — follow it by default.
 - **Governance docs**: `docs/governance/` tracks workflow, tech stack, product definition.
@@ -212,7 +212,8 @@ No dedup on `bid` across parquet files — duplicate FltyIds inflate damage tota
 |----------|------|
 | Agent execution contract | `AGENTS.md` |
 | Pipeline flowchart (end-to-end) | `docs/pipeline_flowchart.md` |
-| C4 architecture diagrams | `C4-Documentation/c4-*.md` |
+| E2E Mermaid diagram | `docs/architecture/e2e_pipeline.md` |
+| C4 architecture diagrams | `docs/architecture/c4-*.md` |
 | System manual | `docs/manual/system_manual.md` |
 | Onboarding guide | `docs/wiki/zero_to_hero.md` |
 | NSI data dictionary | `docs/data_dictionary/NSI_DATA_DICTIONARY_EN.md` |
