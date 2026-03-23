@@ -31,7 +31,6 @@ graph TD
 
     subgraph "Pipeline 2: L/M/H Population Impact"
         LMH_04["04_classify_lmh.py<br/>Athena: dedup → L/M/H<br/>zone classification<br/>→ county aggregation"]
-        SVI_BUMP["SVI Conditional Bump<br/>HIGH zone: pop_impacted<br/>× (1 + 0.2 × svi_score)"]
         FMT_05["05_format_for_spreadsheet.py<br/>Census join + SVI join<br/>+ SVI bump + ARC rates<br/>shelter: H=5% M=3% L=1%<br/>feeding: H=12% M=7% L=3%"]
         VAL_06["06_validate_lmh.py<br/>RMSE/MAE/R² vs GT<br/>threshold sensitivity"]
         LMH_LONG["county_lmh_long.csv<br/>(836 rows: event×county×zone)"]
@@ -72,8 +71,7 @@ graph TD
     LMH_WIDE --> FMT_05
     CENSUS --> FMT_05
     SVI --> FMT_05
-    FMT_05 --> SVI_BUMP
-    SVI_BUMP --> PLANNING
+    FMT_05 --> PLANNING
     PLANNING --> VAL_06
     GT --> VAL_06
     VAL_06 --> REPORT

@@ -193,7 +193,7 @@ def fetch_svi_data(output_path: Path) -> pd.DataFrame:
         resp = requests.get(CDC_SVI_URL, timeout=120)
         resp.raise_for_status()
     except Exception as e:
-        raise RuntimeError(f"CDC SVI download failed: {e}")
+        raise RuntimeError("CDC SVI download failed") from e
 
     df = pd.read_csv(io.StringIO(resp.text), dtype={"FIPS": str})
 
@@ -419,7 +419,12 @@ def export_csv(df: pd.DataFrame, output_path: Path) -> None:
     log(f"CSV exported: {len(out)} rows -> {output_path}")
 
 
-def export_excel(df: pd.DataFrame, output_path: Path) -> None:
+def export_excel(
+    df: pd.DataFrame,
+    output_path: Path,
+    svi_bump_weight: float,
+    svi_enabled: bool,
+) -> None:
     """Export Excel workbook with Estimates and Parameters sheets."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -431,6 +436,7 @@ def export_excel(df: pd.DataFrame, output_path: Path) -> None:
     out = out[OUTPUT_COLUMNS]
 
     # Prepare parameters sheet
+    svi_weight_value = svi_bump_weight if svi_enabled else 0.0
     params_data = {
         "Parameter": [
             "Shelter Rate — High",
@@ -449,6 +455,7 @@ def export_excel(df: pd.DataFrame, output_path: Path) -> None:
             "Data Source — Surge/Damage",
             "Data Source — Census",
             "Data Source — SVI",
+            "SVI Bump Enabled",
             "SVI Bump Weight (HIGH zone only)",
             "Generated",
         ],
@@ -469,7 +476,8 @@ def export_excel(df: pd.DataFrame, output_path: Path) -> None:
             "FAST predictions via Athena (arc_storm_surge.predictions)",
             "Census ACS 5-year 2022 (B01001_001E)",
             "CDC SVI 2022 county-level (RPL_THEMES, 0-1 percentile)",
-            SVI_HIGH_BUMP_WEIGHT,
+            svi_enabled,
+            svi_weight_value,
             datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         ],
     }
@@ -531,6 +539,8 @@ def main():
     census_path = Path(args.census)
     svi_path = Path(args.svi)
     output_dir = Path(args.output_dir)
+    svi_enabled = not args.no_svi
+    svi_bump_weight = args.svi_bump_weight if svi_enabled else 0.0
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # -----------------------------------------------------------------------
@@ -575,21 +585,24 @@ def main():
     # -----------------------------------------------------------------------
     # Step 3b: Load and join SVI data
     # -----------------------------------------------------------------------
-    if not args.no_svi:
+    if svi_enabled:
         log("Step 3b: Loading CDC SVI data")
         svi_df = load_svi(svi_path)
         df = df.merge(svi_df, on="county_fips5", how="left")
+        df["svi_bump_weight"] = svi_bump_weight
+        matched_svi = df["svi_score"].notna().sum()
         df["svi_score"] = df["svi_score"].fillna(0.0)
-        matched_svi = (df["svi_score"] > 0).sum()
         log(f"  {matched_svi}/{len(df)} county-events matched SVI data")
 
         # Step 3c: Apply SVI bump on HIGH intensity zones
         log("Step 3c: Applying SVI bump to HIGH intensity zones")
-        df = apply_svi_bump(df, bump_weight=args.svi_bump_weight)
+        df = apply_svi_bump(df, bump_weight=svi_bump_weight)
+        df["svi_bump_weight"] = svi_bump_weight
     else:
         log("Step 3b: SVI bump disabled (--no-svi)")
         df["svi_score"] = 0.0
         df["svi_bump_applied"] = False
+        df["svi_bump_weight"] = 0.0
 
     # -----------------------------------------------------------------------
     # Step 4: Apply ARC conversion rates
@@ -621,7 +634,12 @@ def main():
     # -----------------------------------------------------------------------
     xlsx_path = output_dir / "arc_planning_template_lmh.xlsx"
     log("Step 8: Exporting Excel")
-    export_excel(df, xlsx_path)
+    export_excel(
+        df,
+        xlsx_path,
+        svi_bump_weight=svi_bump_weight,
+        svi_enabled=svi_enabled,
+    )
 
     # -----------------------------------------------------------------------
     # Step 9: Event summary

@@ -179,19 +179,20 @@ Source: ARC Mass Care Planning Assumptions Job Tool V.6.0, Figures 9–10.
 ### Running Pipeline 2
 
 ```bash
-cd research/population_impact/scripts
+cd research/population_impact
 
 # Step 1: Classify and aggregate (requires AWS credentials for Athena)
-python 04_classify_lmh.py --output-dir ../data
+python scripts/04_classify_lmh.py --output-dir data
 
 # Step 2: Format for ARC spreadsheet (SVI bump enabled by default)
-python 05_format_for_spreadsheet.py \
-  --input ../data/county_lmh_features.csv \
-  --census ../data/census_county_population.csv \
-  --output-dir ../outputs
+python scripts/05_format_for_spreadsheet.py \
+  --input data/county_lmh_features.csv \
+  --census data/census_county_population.csv \
+  --svi data/svi_county.csv \
+  --output-dir outputs
 
 # Step 3: Validate against ground truth
-python 06_validate_lmh.py
+python scripts/06_validate_lmh.py
 ```
 
 ### Output
