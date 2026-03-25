@@ -7,11 +7,11 @@ CMU Heinz MSPPM 2026 Capstone for American Red Cross. Property-level storm surge
 ## Architecture
 
 ```
-NSI Parquet (Oracle) → clean/filter → FAST CSV → FAST engine → damage predictions
-SLOSH Parquet        → rasterize   → GeoTIFF flood depth raster ↗
+NSI Parquet → DuckDB: clean/filter/dedup/map → FAST CSV → FAST engine → damage predictions
+NHC P-Surge GeoTIFF (FAST-main/rasters/) ──────────────────────────────↗
 ```
 
-- Key entry point: `scripts/fast_e2e_from_oracle.py`
+- Primary pipeline: `scripts/duckdb_fast_pipeline.py`
 - FAST headless engine: `FAST-main/Python_env/run_fast.py` (no GUI for production)
 - `hazus_notinuse.py` is NOT obsolete — it is the active FAST execution engine
 - `manage.py` is Windows-only (`ctypes.windll`); do not import on macOS/Linux
@@ -20,10 +20,12 @@ SLOSH Parquet        → rasterize   → GeoTIFF flood depth raster ↗
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/fast_e2e_from_oracle.py` | Main E2E pipeline: OCI download → NSI→FAST CSV → run FAST → upload |
+| `scripts/duckdb_fast_pipeline.py` | **Primary pipeline**: NSI Parquet → FAST CSV via DuckDB SQL |
+| `scripts/download_nsi_by_state.py` | Download NSI from USACE API → Parquet |
+| `scripts/nsi_raw_to_parquet.py` | Raw NSI GPKG/GeoJSON → Parquet conversion |
 | `scripts/h3_spatial_index.py` | H3 hex spatial pre-filtering for raster-aware building selection |
-| `scripts/duckdb_fast_pipeline.py` | DuckDB-accelerated pipeline variant |
 | `scripts/slosh_to_raster.py` | SLOSH Parquet → GeoTIFF converter |
+| `scripts/validate_pipeline.py` | Post-run validation: schema checks + aggregate stats |
 
 ## Data Contracts
 
@@ -53,38 +55,36 @@ SLOSH Parquet        → rasterize   → GeoTIFF flood depth raster ↗
 
 ## Configuration
 
-- `configs/fast_e2e.yaml` — batch_size, firmzone codes, foundation type mapping
 - `configs/event_state_map.yaml` — hurricane → affected state mapping
 
 ## Common Commands
 
 ```bash
-# Full E2E pipeline (impact-only, default)
-python scripts/fast_e2e_from_oracle.py \
-  --state-scope Florida --raster-name auto --config configs/fast_e2e.yaml
-
-# Full domain mode (all buildings)
-python scripts/fast_e2e_from_oracle.py --state-scope Florida --mode full-domain
-
-# DuckDB-accelerated variant
+# Primary pipeline (DuckDB)
 python scripts/duckdb_fast_pipeline.py --state Florida
+
+# Download NSI data by state
+python scripts/download_nsi_by_state.py --state Florida --engine duckdb --output-dir data
 
 # SLOSH → raster
 python scripts/slosh_to_raster.py --basin ny3mom --category 3 --tide high
 
 # H3 spatial pre-indexing
 python scripts/h3_spatial_index.py --raster path/to/raster.tif --resolution 7
+
+# Validate pipeline output
+python scripts/validate_pipeline.py --predictions path/to/output.csv
 ```
 
 ## Known Issues
 
-### 99.7% Zero-Loss Spatial Mismatch (CRITICAL)
+### 99.7% Zero-Loss Spatial Mismatch (RESOLVED)
 
-Buildings with valid FIRM zones bypass bbox filter in `fast_e2e_from_oracle.py`, producing rows outside raster coverage. FAST returns depth=0 for out-of-bounds coords, inflating zero-loss output. **Fix**: apply raster-aware spatial pre-filtering (H3 hex or bbox clip) to ALL buildings before FAST, regardless of firmzone.
+Was caused by legacy pipeline (`fast_e2e_from_oracle.py`) allowing buildings with valid FIRM zones to bypass bbox filter. The DuckDB pipeline applies raster-bbox spatial filtering to ALL buildings via SQL, resolving this issue.
 
-### FltyId Deduplication (HIGH)
+### FltyId Deduplication (RESOLVED)
 
-No dedup on `bid` across parquet files — duplicate FltyIds inflate damage totals. Track `seen_bids: set` and skip duplicates.
+DuckDB pipeline handles dedup via `ROW_NUMBER() OVER (PARTITION BY bid)` in a single SQL pass.
 
 ### Partial FAST Output (MEDIUM)
 

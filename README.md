@@ -7,8 +7,8 @@ Property-level storm surge/tsunami impact modeling using FEMA's FAST tool, USACE
 ## Architecture
 
 ```
-NSI Parquet (Oracle) → clean/filter → FAST CSV ─┐
-SLOSH Parquet → rasterize → GeoTIFF (.tif) ─────┤→ FAST engine → damage predictions
+NSI Parquet → DuckDB: clean/filter/dedup → FAST CSV ─┐
+NHC P-Surge GeoTIFF (.tif) ──────────────────────────┤→ FAST engine → damage predictions
 ```
 
 See `docs/pipeline_flowchart.md` for the full Mermaid diagram.
@@ -16,7 +16,6 @@ See `docs/pipeline_flowchart.md` for the full Mermaid diagram.
 ## Prerequisites
 
 - Python 3.10+
-- OCI CLI configured with access to `arc-capstone-processed-parquet` bucket
 - FAST engine (`FAST-main/Python_env/run_fast.py`)
 
 ```bash
@@ -26,14 +25,11 @@ pip install pyarrow rasterio pyyaml h3 duckdb geopandas
 ## Quick Start
 
 ```bash
-# Run the E2E pipeline for a single state
-python scripts/fast_e2e_from_oracle.py \
-  --state-scope Florida \
-  --raster-name auto \
-  --config configs/fast_e2e.yaml
-
-# DuckDB-accelerated variant
+# Run the primary pipeline for a single state
 python scripts/duckdb_fast_pipeline.py --state Florida
+
+# Download NSI data by state
+python scripts/download_nsi_by_state.py --state Florida --engine duckdb --output-dir data
 
 # Convert SLOSH to raster
 python scripts/slosh_to_raster.py --basin ny3mom --category 3 --tide high
@@ -43,15 +39,18 @@ python scripts/slosh_to_raster.py --basin ny3mom --category 3 --tide high
 
 ```
 scripts/
-  fast_e2e_from_oracle.py   # Main E2E pipeline
-  h3_spatial_index.py       # H3 hex spatial filtering
-  duckdb_fast_pipeline.py   # DuckDB-accelerated pipeline
-  slosh_to_raster.py        # SLOSH → GeoTIFF converter
+  duckdb_fast_pipeline.py   # Primary pipeline: NSI Parquet → FAST CSV → FAST
+  download_nsi_by_state.py  # NSI API download → Parquet
+  nsi_raw_to_parquet.py     # Raw NSI → processed Parquet conversion
+  h3_spatial_index.py       # H3 hex spatial pre-filtering
+  slosh_to_raster.py        # SLOSH Parquet → GeoTIFF converter
+  validate_pipeline.py      # Post-run validation
 configs/
-  fast_e2e.yaml             # Pipeline configuration
   event_state_map.yaml      # Hurricane → state mapping
 docs/
   pipeline_flowchart.md     # Architecture diagram
+notebooks/
+  shelter_demand.ipynb      # Colab: tract-level shelter demand (Pipeline 3)
 FAST-main/
   Python_env/run_fast.py    # FAST headless engine
 ```
@@ -78,22 +77,7 @@ Per-building: `BldgDmgPct` (% damaged), `BldgLossUSD` ($ loss), `Depth_in_Struc`
 
 ## Prediction Results
 
-Results for 9 hurricane events × 3 SLOSH advisories (27 runs, ~3.9M building predictions) are published in two locations:
-
-### Oracle Object Storage (browse)
-[https://objectstorage.us-ashburn-1.oraclecloud.com/n/id9odvkah5da/b/arc-capstone-processed-parquet/o/index.html](https://objectstorage.us-ashburn-1.oraclecloud.com/n/id9odvkah5da/b/arc-capstone-processed-parquet/o/index.html)
-
-### AWS S3 + Athena (query)
-Files are also mirrored to `s3://red-cross-capstone-project-data/arc-results/` in both CSV and Parquet format, queryable via AWS Athena:
-
-```sql
--- Database: arc_storm_surge  |  Table: predictions
-SELECT event, adv, COUNT(*) AS buildings,
-       ROUND(SUM(BldgLossUSD)/1e9, 2) AS loss_billion_usd
-FROM arc_storm_surge.predictions
-GROUP BY event, adv
-ORDER BY event, adv;
-```
+Results for 9 hurricane events × 3 advisories (27 runs, ~3.9M building predictions):
 
 **Coverage**
 
@@ -157,39 +141,11 @@ ORDER BY event, adv;
 
 | Column | Description |
 |--------|-------------|
-| `event` | Hurricane event slug (Athena partition key) |
-| `adv` | Advisory number (Athena partition key) |
+| `event` | Hurricane event slug |
+| `adv` | Advisory number |
 | `raster_name` | Source SLOSH raster filename |
 | `run_id` | Pipeline run ID (timestamp-based) |
 | `flc` | Flood class: CoastalA / CoastalV / Riverine |
-
-**Common Athena Queries**
-
-```sql
--- Damage summary by state for a single event/advisory
-SELECT state,
-       COUNT(*)                          AS buildings,
-       ROUND(AVG(Depth_Grid), 1)         AS avg_depth_ft,
-       ROUND(SUM(BldgLossUSD)/1e6, 1)   AS loss_M_usd,
-       ROUND(SUM(Debris_Tot))            AS debris_tons
-FROM arc_storm_surge.predictions
-WHERE event = 'IDA_2021' AND adv = 18
-GROUP BY state ORDER BY loss_M_usd DESC;
-
--- Residential buildings with depth > 4 ft (high-need proxy)
-SELECT state, Occ, COUNT(*) AS households
-FROM arc_storm_surge.predictions
-WHERE event = 'HELENE_2024' AND Depth_Grid > 4
-  AND Occ LIKE 'RES%'
-GROUP BY state, Occ ORDER BY households DESC;
-
--- Cross-event loss comparison
-SELECT event,
-       SUM(BldgLossUSD)/1e9  AS total_loss_B,
-       COUNT(*)               AS buildings
-FROM arc_storm_surge.predictions
-GROUP BY event ORDER BY total_loss_B DESC;
-```
 
 ---
 
