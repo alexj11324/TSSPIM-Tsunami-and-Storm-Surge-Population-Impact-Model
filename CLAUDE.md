@@ -39,10 +39,10 @@ python scripts/duckdb_fast_pipeline.py \
   --flc CoastalA
 
 # H3 spatial index
-python scripts/h3_spatial_index.py --raster path/to/raster.tif --resolution 7
+python scripts/h3_spatial_index.py --raster path/to/raster.tif --parquet data/nsi/*.parquet --resolution 7
 
 # Validate output
-python scripts/validate_pipeline.py --predictions path/to/output.csv
+python scripts/validate_pipeline.py path/to/output.csv
 ```
 
 ## Data Contracts
@@ -59,6 +59,7 @@ python scripts/validate_pipeline.py --predictions path/to/output.csv
 | `found_type` | `FoundationType` | Numeric: Pier=2, Basement=4, Crawl=5, Slab=7 |
 | `found_ht` | `FirstFloorHt` | Feet above grade |
 | `latitude`/`longitude` | `Latitude`/`Longitude` | WGS84 |
+| `val_cont` | `ContentCost` | Optional, defaults to 0 via COALESCE |
 
 Full contract with optional columns and runtime params: @AGENTS.md
 

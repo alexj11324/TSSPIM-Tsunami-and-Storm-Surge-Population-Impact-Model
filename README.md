@@ -34,32 +34,41 @@ python scripts/duckdb_fast_pipeline.py \
   --flc CoastalA
 
 # Validate pipeline output
-python scripts/validate_pipeline.py --predictions path/to/output.csv
+python scripts/validate_pipeline.py path/to/output.csv
 ```
 
 ## Project Structure
 
 ```
 scripts/
-  duckdb_fast_pipeline.py   # Primary pipeline: NSI Parquet -> FAST CSV -> FAST
-  nsi_raw_to_parquet.py     # Raw NSI -> processed Parquet conversion
-  h3_spatial_index.py       # H3 hex spatial pre-filtering
-  slosh_to_raster.py        # SLOSH Parquet -> GeoTIFF converter
-  validate_pipeline.py      # Post-run validation: schema + stats
-  ml_damage_model.py        # ML-based damage model (experimental)
+  duckdb_fast_pipeline.py       # Primary pipeline: NSI Parquet -> FAST CSV
+  download_nsi_by_state.py      # Download NSI from USACE API -> Parquet
+  import_nhc_by_storm.py        # Download NHC P-Surge rasters
+  04_classify_lmh.py            # Classify buildings into L/M/H intensity zones
+  05_format_for_spreadsheet.py  # Format output for ARC Excel template
+  06_validate_lmh.py            # Validate L/M/H classification results
+  nsi_raw_to_parquet.py         # Raw NSI GPKG/GeoJSON -> Parquet
+  h3_spatial_index.py           # H3 hex spatial pre-filtering
+  slosh_to_raster.py            # SLOSH Parquet -> GeoTIFF (legacy)
+  validate_pipeline.py          # Post-run validation: schema + stats
+  ml_damage_model.py            # ML-based damage model (experimental)
+  match_county_coverage_cloud.py # County coverage matching
 tests/
-  conftest.py               # Shared pytest fixtures
+  conftest.py                   # Shared pytest fixtures
+  test_download_nsi_by_state.py # NSI download tests
+  test_import_nhc_by_storm.py   # NHC import tests
 notebooks/
-  shelter_demand.ipynb            # BHI shelter demand estimation (Colab)
+  shelter_demand.ipynb          # BHI shelter demand estimation (Colab)
+  deploy_population_impact.ipynb # County-level L/M/H impact model (Colab)
 configs/
-  event_state_map.yaml      # Hurricane -> affected states + raster patterns
+  event_state_map.yaml          # Hurricane -> affected states + raster patterns
 docs/
-  shelter_demand_pipeline.md # Pipeline architecture with BHI model (Mermaid)
-  ddf_analysis.md           # Depth-damage function analysis
-  reflection.md             # Project insights and learnings
-  nsi_data_dictionary.md    # NSI field definitions (EN/ZH)
+  e2e_pipeline.md               # End-to-end pipeline architecture (Mermaid)
+  shelter_demand_pipeline.md    # Shelter demand BHI pipeline (Mermaid)
+  reflection.md                 # Project insights and learnings
+  nsi_data_dictionary.md        # NSI field definitions (EN/ZH)
 FAST-main/
-  Python_env/run_fast.py    # FAST headless engine (production)
+  Python_env/run_fast.py        # FAST headless engine (production)
 ```
 
 ## Data Sources

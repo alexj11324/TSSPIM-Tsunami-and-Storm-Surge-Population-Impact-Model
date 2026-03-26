@@ -66,15 +66,11 @@ Keep and populate these columns:
 9. `longitude` -> `Longitude`
 10. `val_cont` -> `ContentCost` (optional)
 
-### 4.2 SLOSH -> Raster
+### 4.2 Flood Depth Raster
 
-Use SLOSH fields to build raster; FAST does not consume SLOSH parquet directly:
+Primary source: NHC P-Surge inundation rasters, downloaded via `scripts/import_nhc_by_storm.py` and stored in `FAST-main/rasters/`. Output is GeoTIFF (`.tif`) in feet.
 
-1. Geometry: `geometry_wkt`
-2. Surge scenario value: one of `cN_mean` / `cN_high` (N=0..5)
-3. Terrain adjustment as needed: `topography`
-
-Output must be GeoTIFF (`.tif`) in feet.
+Legacy path: `scripts/slosh_to_raster.py` can convert SLOSH Parquet (`geometry_wkt`, `cN_mean`/`cN_high`, `topography`) to GeoTIFF, but is not the current production workflow.
 
 ## 5. Default Hazard Choice Policy
 
