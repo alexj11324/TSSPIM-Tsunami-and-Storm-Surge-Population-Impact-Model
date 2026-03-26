@@ -1,4 +1,6 @@
-# CLAUDE.md — ARC Capstone
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
@@ -7,29 +9,44 @@ CMU Heinz MSPPM 2026 Capstone for American Red Cross. Property-level storm surge
 ## Architecture
 
 ```
-NSI Parquet → DuckDB: clean/filter/dedup/map → FAST CSV → FAST engine → damage predictions
-NHC P-Surge GeoTIFF (FAST-main/rasters/) ──────────────────────────────↗
+NSI Parquet --> DuckDB SQL (clean/filter/dedup/map) --> FAST CSV
+NHC P-Surge GeoTIFF (FAST-main/rasters/)                  |
+                                                    FAST engine --> damage predictions
 ```
 
 - Primary pipeline: `scripts/duckdb_fast_pipeline.py`
-- FAST headless engine: `FAST-main/Python_env/run_fast.py` (no GUI for production)
-- `hazus_notinuse.py` is NOT obsolete — it is the active FAST execution engine
-- `manage.py` is Windows-only (`ctypes.windll`); do not import on macOS/Linux
+- FAST headless engine: `FAST-main/Python_env/run_fast.py`
+- Agent execution rules: @AGENTS.md
+- Pipeline architecture: @docs/shelter_demand_pipeline.md
 
-## Key Scripts
+## Critical Gotchas
 
-| Script | Purpose |
-|--------|---------|
-| `scripts/duckdb_fast_pipeline.py` | **Primary pipeline**: NSI Parquet → FAST CSV via DuckDB SQL |
-| `scripts/download_nsi_by_state.py` | Download NSI from USACE API → Parquet |
-| `scripts/nsi_raw_to_parquet.py` | Raw NSI GPKG/GeoJSON → Parquet conversion |
-| `scripts/h3_spatial_index.py` | H3 hex spatial pre-filtering for raster-aware building selection |
-| `scripts/slosh_to_raster.py` | SLOSH Parquet → GeoTIFF converter |
-| `scripts/validate_pipeline.py` | Post-run validation: schema checks + aggregate stats |
+- `hazus_notinuse.py` is NOT obsolete -- it is the active FAST execution engine called by `run_fast.py`
+- `manage.py` uses `ctypes.windll` -- do NOT import on macOS/Linux
+- Do NOT use FIRM zones as spatial filter for event impact (FIRM = long-term risk; raster = event footprint)
+- Spatial filtering must use raster bbox (`_raster_bbox_wgs84`) -- all buildings outside bbox are dropped
+- `FltyId` must be deduplicated (DuckDB pipeline handles via `ROW_NUMBER() OVER (PARTITION BY bid)`)
+- Partial FAST output: `run_fast_job` checks returncode + file existence but not row count -- partial writes on crash pass the success check
+
+## Commands
+
+```bash
+# Primary pipeline
+python scripts/duckdb_fast_pipeline.py --state Florida
+
+# SLOSH -> raster
+python scripts/slosh_to_raster.py --basin ny3mom --category 3 --tide high
+
+# H3 spatial index
+python scripts/h3_spatial_index.py --raster path/to/raster.tif --resolution 7
+
+# Validate output
+python scripts/validate_pipeline.py --predictions path/to/output.csv
+```
 
 ## Data Contracts
 
-### NSI → FAST CSV Column Mapping (see AGENTS.md §3-4)
+### NSI -> FAST CSV Mapping
 
 | NSI Field | FAST Column | Notes |
 |-----------|-------------|-------|
@@ -38,69 +55,32 @@ NHC P-Surge GeoTIFF (FAST-main/rasters/) ─────────────
 | `val_struct` | `Cost` | Replacement cost ($) |
 | `sqft` | `Area` | Floor area (sqft) |
 | `num_story` | `NumStories` | Stories above ground |
-| `found_type` | `FoundationType` | Numeric via `found_type_map`: Pier=2, Basement=4, Crawl=5, Slab=7 |
+| `found_type` | `FoundationType` | Numeric: Pier=2, Basement=4, Crawl=5, Slab=7 |
 | `found_ht` | `FirstFloorHt` | Feet above grade |
-| `latitude` / `longitude` | `Latitude` / `Longitude` | WGS84 |
-| `val_cont` | `ContentCost` | Optional |
+| `latitude`/`longitude` | `Latitude`/`Longitude` | WGS84 |
 
-### SLOSH → Raster
+Full contract with optional columns and runtime params: @AGENTS.md
 
-- Geometry: `geometry_wkt` | Surge: `cN_mean`/`cN_high` (N=0..5) | Terrain: `topography`
-- Inundation depth = surge elevation - topography; output GeoTIFF in feet
+### Flood Depth Raster
 
-### FAST Runtime Parameters
+Pipeline uses NHC P-Surge GeoTIFF rasters directly (inundation depth in feet). See `docs/shelter_demand_pipeline.md` for the full data flow.
+
+## FAST Runtime Parameters
 
 - `flC`: `CoastalA` (default) | `CoastalV` (high-risk) | `Riverine` (inland)
 - `raster`: path to `.tif` flood depth raster
 
 ## Configuration
 
-- `configs/event_state_map.yaml` — hurricane → affected state mapping
+- `configs/event_state_map.yaml` -- hurricane -> affected states + raster patterns
 
-## Common Commands
+## Dependencies
 
-```bash
-# Primary pipeline (DuckDB)
-python scripts/duckdb_fast_pipeline.py --state Florida
+Python 3.10+. Key packages: `duckdb`, `rasterio`, `geopandas`, `pyarrow`, `pyyaml`, `h3`.
+Conda env spec: `FAST-main/src/environment.yaml` (FAST-specific, Windows-focused).
 
-# Download NSI data by state
-python scripts/download_nsi_by_state.py --state Florida --engine duckdb --output-dir data
+## Testing
 
-# SLOSH → raster
-python scripts/slosh_to_raster.py --basin ny3mom --category 3 --tide high
-
-# H3 spatial pre-indexing
-python scripts/h3_spatial_index.py --raster path/to/raster.tif --resolution 7
-
-# Validate pipeline output
-python scripts/validate_pipeline.py --predictions path/to/output.csv
-```
-
-## Known Issues
-
-### 99.7% Zero-Loss Spatial Mismatch (RESOLVED)
-
-Was caused by legacy pipeline (`fast_e2e_from_oracle.py`) allowing buildings with valid FIRM zones to bypass bbox filter. The DuckDB pipeline applies raster-bbox spatial filtering to ALL buildings via SQL, resolving this issue.
-
-### FltyId Deduplication (RESOLVED)
-
-DuckDB pipeline handles dedup via `ROW_NUMBER() OVER (PARTITION BY bid)` in a single SQL pass.
-
-### Partial FAST Output (MEDIUM)
-
-`run_fast_job` checks returncode + file existence but not row count. Partial writes on crash pass the success check.
-
-## Spatial Filtering Rules
-
-1. `impact-only` mode: drop ALL buildings outside `raster_bbox_wgs84(raster_path)`
-2. BBox is coarse; for irregular footprints consider raster valid-pixel convex hull
-3. Do NOT use FIRM zones as proxy for event footprint (FIRM = long-term risk; raster = event)
-
-## What NOT to Do
-
-- Do not run GUI mode for production
-- Do not import `manage.py` on macOS/Linux
-- Do not use FIRM zone as spatial filter in `impact-only` mode
-- Do not skip FltyId deduplication
-- Do not expand scope beyond what is requested
-- Do not ask questions answered by AGENTS.md or this file
+Use `pytest`. Pipeline validation: `scripts/validate_pipeline.py`.
+Test data parity: `FAST-main/tests/test_csv_parquet_parity.py`.
+Test scaffold: `tests/conftest.py` (shared fixtures).

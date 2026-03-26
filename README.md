@@ -7,11 +7,11 @@ Property-level storm surge/tsunami impact modeling using FEMA's FAST tool, USACE
 ## Architecture
 
 ```
-NSI Parquet → DuckDB: clean/filter/dedup → FAST CSV ─┐
-NHC P-Surge GeoTIFF (.tif) ──────────────────────────┤→ FAST engine → damage predictions
+NSI Parquet --> DuckDB: clean/filter/dedup/map --> FAST CSV -+
+NHC P-Surge GeoTIFF (.tif) --------------------------------+-> FAST engine -> damage predictions
 ```
 
-See `docs/pipeline_flowchart.md` for the full Mermaid diagram.
+See `docs/shelter_demand_pipeline.md` for the full Mermaid diagram.
 
 ## Prerequisites
 
@@ -20,6 +20,7 @@ See `docs/pipeline_flowchart.md` for the full Mermaid diagram.
 
 ```bash
 pip install pyarrow rasterio pyyaml h3 duckdb geopandas
+pip install ruff  # linting
 ```
 
 ## Quick Start
@@ -28,31 +29,36 @@ pip install pyarrow rasterio pyyaml h3 duckdb geopandas
 # Run the primary pipeline for a single state
 python scripts/duckdb_fast_pipeline.py --state Florida
 
-# Download NSI data by state
-python scripts/download_nsi_by_state.py --state Florida --engine duckdb --output-dir data
-
 # Convert SLOSH to raster
 python scripts/slosh_to_raster.py --basin ny3mom --category 3 --tide high
+
+# Validate pipeline output
+python scripts/validate_pipeline.py --predictions path/to/output.csv
 ```
 
 ## Project Structure
 
 ```
 scripts/
-  duckdb_fast_pipeline.py   # Primary pipeline: NSI Parquet → FAST CSV → FAST
-  download_nsi_by_state.py  # NSI API download → Parquet
-  nsi_raw_to_parquet.py     # Raw NSI → processed Parquet conversion
+  duckdb_fast_pipeline.py   # Primary pipeline: NSI Parquet -> FAST CSV -> FAST
+  nsi_raw_to_parquet.py     # Raw NSI -> processed Parquet conversion
   h3_spatial_index.py       # H3 hex spatial pre-filtering
-  slosh_to_raster.py        # SLOSH Parquet → GeoTIFF converter
-  validate_pipeline.py      # Post-run validation
-configs/
-  event_state_map.yaml      # Hurricane → state mapping
-docs/
-  pipeline_flowchart.md     # Architecture diagram
+  slosh_to_raster.py        # SLOSH Parquet -> GeoTIFF converter
+  validate_pipeline.py      # Post-run validation: schema + stats
+  ml_damage_model.py        # ML-based damage model (experimental)
+tests/
+  conftest.py               # Shared pytest fixtures
 notebooks/
-  shelter_demand.ipynb      # Colab: tract-level shelter demand (Pipeline 3)
+  shelter_demand.ipynb            # BHI shelter demand estimation (Colab)
+configs/
+  event_state_map.yaml      # Hurricane -> affected states + raster patterns
+docs/
+  shelter_demand_pipeline.md # Pipeline architecture with BHI model (Mermaid)
+  ddf_analysis.md           # Depth-damage function analysis
+  reflection.md             # Project insights and learnings
+  nsi_data_dictionary.md    # NSI field definitions (EN/ZH)
 FAST-main/
-  Python_env/run_fast.py    # FAST headless engine
+  Python_env/run_fast.py    # FAST headless engine (production)
 ```
 
 ## Data Sources
@@ -63,11 +69,23 @@ FAST-main/
 | SLOSH | NOAA MOM surge grids | Parquet, partitioned by basin |
 | SVI | CDC Social Vulnerability Index | Census tract level |
 
+## Linting
+
+```bash
+ruff check scripts/          # lint
+ruff format scripts/         # auto-format
+```
+
+Config in `pyproject.toml` (E/F/W/I rules, line-length 100, Python 3.10+).
+
 ## Key Documentation
 
-- `CLAUDE.md` — Agent instructions, data contracts, known issues
-- `AGENTS.md` — Execution contract and column mapping rules
-- `NSI_DATA_DICTIONARY_EN.md` / `SLOSH_DATA_DICTIONARY_EN.md` — Field definitions
+| File | Purpose |
+|------|---------|
+| `CLAUDE.md` | AI agent instructions, data contracts, critical gotchas |
+| `AGENTS.md` | Execution contract, column mapping rules, guardrails |
+| `docs/shelter_demand_pipeline.md` | Pipeline architecture with BHI shelter demand model (Mermaid) |
+| `docs/nsi_data_dictionary.md` | NSI field definitions (English + Chinese) |
 
 ## Output
 
@@ -77,7 +95,7 @@ Per-building: `BldgDmgPct` (% damaged), `BldgLossUSD` ($ loss), `Depth_in_Struc`
 
 ## Prediction Results
 
-Results for 9 hurricane events × 3 advisories (27 runs, ~3.9M building predictions):
+Results for 9 hurricane events x 3 advisories (27 runs, ~3.9M building predictions):
 
 **Coverage**
 
@@ -85,13 +103,13 @@ Results for 9 hurricane events × 3 advisories (27 runs, ~3.9M building predicti
 |-------|-----------|-----------|-------|
 | BERYL_2024 | 39, 40, 41 | ~107K each | TX/LA Gulf Coast |
 | DEBBY_2024 | 18, 19, 20 | ~103K each | FL/GA/NC/SC/VA |
-| FLORENCE_2018 | 63, 64, 65 | 17K–32K | NC/SC/VA Atlantic |
-| HELENE_2024 | 14, 15, 16 | 240K–475K | FL/GA/NC/SC |
-| IAN_2022 | 31, 32, 33 | ~119K–122K | FL/NC/SC |
-| IDALIA_2023 | 18, 19, 20 | 62K–124K | FL/GA/SC |
+| FLORENCE_2018 | 63, 64, 65 | 17K-32K | NC/SC/VA Atlantic |
+| HELENE_2024 | 14, 15, 16 | 240K-475K | FL/GA/NC/SC |
+| IAN_2022 | 31, 32, 33 | ~119K-122K | FL/NC/SC |
+| IDALIA_2023 | 18, 19, 20 | 62K-124K | FL/GA/SC |
 | IDA_2021 | 16, 17, 18 | ~412K each | AL/LA/MS |
 | MICHAEL_2018 | 20, 21, 22 | ~900 each | Coastal GA (small raster footprint) |
-| MILTON_2024 | 20, 21, 22 | 70K–208K | FL |
+| MILTON_2024 | 20, 21, 22 | 70K-208K | FL |
 
 ### Output Column Reference
 
@@ -100,7 +118,7 @@ Results for 9 hurricane events × 3 advisories (27 runs, ~3.9M building predicti
 | Column | Description |
 |--------|-------------|
 | `FltyId` | NSI unique building ID |
-| `Occ` | Occupancy type (RES1=single-family, RES3=multi-family, COM1=commercial, …) |
+| `Occ` | Occupancy type (RES1=single-family, RES3=multi-family, COM1=commercial) |
 | `Cost` | Replacement cost ($) |
 | `Area` | Floor area (sqft) |
 | `NumStories` | Stories above ground |
@@ -114,7 +132,7 @@ Results for 9 hurricane events × 3 advisories (27 runs, ~3.9M building predicti
 | Column | Description |
 |--------|-------------|
 | `Depth_Grid` | Surge depth from SLOSH raster at building location (ft) |
-| `Depth_in_Struc` | Effective depth inside structure = `Depth_Grid` − `FirstFloorHt` (ft) |
+| `Depth_in_Struc` | Effective depth inside structure = Depth_Grid - FirstFloorHt (ft) |
 
 **Damage & Loss**
 
@@ -125,7 +143,7 @@ Results for 9 hurricane events × 3 advisories (27 runs, ~3.9M building predicti
 | `ContentCost` | Contents replacement value ($) |
 | `ContDmgPct` | Contents damage percentage (%) |
 | `ContentLossUSD` | Contents loss ($) |
-| `InventoryLossUSD` | Inventory loss ($ — commercial buildings) |
+| `InventoryLossUSD` | Inventory loss ($ - commercial buildings) |
 
 **Debris & Recovery**
 

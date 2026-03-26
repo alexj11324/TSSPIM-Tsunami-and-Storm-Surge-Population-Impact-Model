@@ -5,8 +5,8 @@ from pathlib import Path
 
 import numpy as np
 import pyarrow.parquet as pq
-from pyarrow import lib as pa_lib
 import rasterio
+from pyarrow import lib as pa_lib
 from rasterio.features import rasterize
 from rasterio.transform import from_bounds
 from shapely import wkt
@@ -89,10 +89,16 @@ def slosh_to_raster(
 
     Path(output_tif).parent.mkdir(parents=True, exist_ok=True)
     with rasterio.open(
-        output_tif, "w", driver="GTiff",
-        height=height, width=width, count=1,
-        dtype="float32", crs=crs,
-        transform=transform, nodata=NODATA,
+        output_tif,
+        "w",
+        driver="GTiff",
+        height=height,
+        width=width,
+        count=1,
+        dtype="float32",
+        crs=crs,
+        transform=transform,
+        nodata=NODATA,
     ) as dst:
         dst.write(raster, 1)
 

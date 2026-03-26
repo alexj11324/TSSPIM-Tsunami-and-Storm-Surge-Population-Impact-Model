@@ -4,6 +4,29 @@ exports/
 # Python caches
 __pycache__/
 *.pyc
+*.pyo
+
+# Packaging
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+
+# Testing
+.pytest_cache/
+
+# Linting
+.ruff_cache/
+
+# Environment
+.env
+
+# Jupyter
+.ipynb_checkpoints/
 
 # Local assistant configs
 .claude/
