@@ -33,12 +33,6 @@ python scripts/duckdb_fast_pipeline.py \
   --output outputs/fast_input.csv \
   --flc CoastalA
 
-# Convert SLOSH parquet to raster
-python scripts/slosh_to_raster.py \
-  --parquet data/slosh/ny3mom.parquet \
-  --output FAST-main/rasters/ny3mom_cat3_mean.tif \
-  --category 3 --scenario mean
-
 # Validate pipeline output
 python scripts/validate_pipeline.py --predictions path/to/output.csv
 ```

@@ -38,9 +38,6 @@ python scripts/duckdb_fast_pipeline.py \
   --output outputs/fast_input.csv \
   --flc CoastalA
 
-# SLOSH -> raster
-python scripts/slosh_to_raster.py --basin ny3mom --category 3 --tide high
-
 # H3 spatial index
 python scripts/h3_spatial_index.py --raster path/to/raster.tif --resolution 7
 
